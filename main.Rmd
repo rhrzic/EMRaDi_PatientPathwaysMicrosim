@@ -66,7 +66,10 @@ p.CBHC_Hosp    <- 0
 p.CBHC_UHC     <- 0
 p.CBHC_CBHC    <- 0
 
+<<<<<<< HEAD
 c.Home    <- 0
+=======
+>>>>>>> eac3e24a302f2ce4cdd9e3fbcba7aacb3df3cd28
 c.GP      <- 1000                           # cost
 c.Hosp    <- 5000                
 c.UHC     <- 10000               
@@ -99,16 +102,26 @@ MicroSim <- function(v.S_1, n.i, n.t, v.s, TR.out = TRUE, TS.out = TRUE, seed = 
     
     for (t in 1:n.t) {
       
+<<<<<<< HEAD
       v.p.l <- Loc(m.L[i, t], m.S[i, t]) 
       v.p.s <- State(m.L[i, t], m.S[i, t])
+=======
+      v.p.l <- Probs(m.L[i, t], m.S[i, t])   
+>>>>>>> eac3e24a302f2ce4cdd9e3fbcba7aacb3df3cd28
       
       m.L[i, t + 1] <- sample(v.l, prob = v.p.l, size = 1)  
       
       m.S[i, t + 1] <- sample(v.s, prob = v.p.s, size = 1)  
       
+<<<<<<< HEAD
       m.C[i, t + 1] <- Costs(m.L[i, t + 1])   
       
       m.E[i, t + 1] <- Util( m.S[i, t + 1])   
+=======
+      m.C[i, t + 1] <- Costs(m.M[i, t + 1])   
+      
+      m.E[i, t + 1] <- Util( m.M[i, t + 1])   
+>>>>>>> eac3e24a302f2ce4cdd9e3fbcba7aacb3df3cd28
       
     } 
     if(i/100 == round(i/100,0)) { # progress bar
@@ -145,6 +158,7 @@ MicroSim <- function(v.S_1, n.i, n.t, v.s, TR.out = TRUE, TS.out = TRUE, seed = 
 
 # The Probs function that updates the transition probabilities of every cycle is shown below.
 
+<<<<<<< HEAD
 Loc <- function(L_it, S_it) { 
 
   v.p.it <- rep(NA, n.l)
@@ -189,12 +203,44 @@ State <- function(L_it, S_it) {
   v.p.it[L_it == "CBHC"]     <- c(1 - p.Diag_CBHC, p.Diag_CBHC)  
   
   ifelse(sum(v.p.it) == 1, return(v.p.it), print("Probabilities do not sum to 1")) 
+=======
+Probs <- function(L_it, S_it) { 
+
+  v.p.l <- rep(NA, n.s)     
+  
+  v.p.s <- rep(NA, n.s)   
+  
+  names(v.p.l) <- v.l       
+  
+  names(v.p.s) <- v.s       
+  
+  if (S_it == "Sick"){
+  
+    v.p.l[L_it == "Home"]     <- c(0, p.Home_GP, 0, 0, 0)                 
+  
+    v.p.l[L_it == "GP"]       <- c(p.GP_Home, p.GP_GP, p.GP_Hosp, p.GP_UHC, p.GP_CBHC)                 
+  
+    v.p.l[L_it == "Hospital"] <- c(p.Hosp_Home, p.Hosp_GP, p.Hosp_Hosp, p.Hosp_UHC, p.Hosp_CBHC)                 
+  
+    v.p.l[L_it == "UHC"]      <- c(p.UHC_Home, p.UHC_GP, p.UHC_Hosp, p.UHC_UHC, p.UHC_CBHC)
+  
+    v.p.l[L_it == "CBHC"]     <- c(p.CBHC_Home, p.CBHC_GP, p.CBHC_Hosp, p.CBHC_UHC, p.CBHC_CBHC)
+  
+  } else {
+    
+    v.p.l     <- c(1, 0, 0, 0, 0)
+  
+  }
+  
+ifelse(sum(v.p.l) == 1, return(v.p.it), print("Probabilities do not sum to 1")) 
+>>>>>>> eac3e24a302f2ce4cdd9e3fbcba7aacb3df3cd28
 
 }
 
 ### Costs function
 # The Costs function estimates the costs at every cycle.
 
+<<<<<<< HEAD
 Costs <- function (L_it) {
   # M_it: health state occupied by individual i at cycle t (character variable)
   # Trt:  is the individual being treated? (default is FALSE) 
@@ -206,20 +252,41 @@ Costs <- function (L_it) {
   c.it[L_it == "UHC"]   <- c.UHC
   c.it[L_it == "CBHC"]  <- c.CBHC
   return(c.it)
+=======
+Costs <- function (M_it, Trt = FALSE) {
+  # M_it: health state occupied by individual i at cycle t (character variable)
+  # Trt:  is the individual being treated? (default is FALSE) 
+  
+  c.it <- 0                                  # by default the cost for everyone is zero 
+  c.it[M_it == "H"]  <- c.H                  # update the cost if healthy
+  c.it[M_it == "S1"] <- c.S1 + c.Trt * Trt   # update the cost if sick conditional on treatment
+  c.it[M_it == "S2"] <- c.S2 + c.Trt * Trt   # update the cost if sicker conditional on treatment
+  return(c.it)        		                   # return the costs
+>>>>>>> eac3e24a302f2ce4cdd9e3fbcba7aacb3df3cd28
 }
 
 
 ### Health outcome function 
 # The Effs function to update the utilities at every cycle.
 
+<<<<<<< HEAD
 Effs <- function (S_it, cl = 1/12) {
+=======
+Effs <- function (M_it, Trt = FALSE, cl = 1) {
+>>>>>>> eac3e24a302f2ce4cdd9e3fbcba7aacb3df3cd28
   # M_it: health state occupied by individual i at cycle t (character variable)
   # Trt:  is the individual treated? (default is FALSE) 
   # cl:   cycle length (default is 1)
   
   u.it <- 0                      # by default the utility for everyone is zero
+<<<<<<< HEAD
   u.it[S_it == "Sick"]  <- u.Sick      # update the utility if healthy
   u.it[S_it == "Diagosed"] <- u.Diag  # update the utility if sick conditional on treatment
+=======
+  u.it[M_it == "H"]  <- u.H      # update the utility if healthy
+  u.it[M_it == "S1"] <- Trt * u.Trt + (1 - Trt) * u.S1  # update the utility if sick conditional on treatment
+  u.it[M_it == "S2"] <- u.S2     # update the utility if sicker
+>>>>>>> eac3e24a302f2ce4cdd9e3fbcba7aacb3df3cd28
   QALYs <-  u.it * cl            # calculate the QALYs during cycle t
   return(QALYs)                  # return the QALYs
 }
