@@ -1,0 +1,269 @@
+---
+title: "Patient Pathways Microsim"
+author: "Rok Hrzic"
+date: "18 March 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# About
+
+## Model architecture
+
+States: sick, diagnosed
+Locations: GP, hospital, UHC, CBHC
+Outcomes: time to diag, time to treat, cost, QoL
+
+## Model itself
+
+### Model input
+```{r}
+n.i   <- 1000                               # number of simulated individuals
+n.t   <- 30                                 # time horizon, 30 cycles
+v.s   <- c("Sick","Diagnosed")              # the model states
+v.l   <- c("Home", "GP", "Hosp", "UHC", "CBHC")
+n.s   <- length(v.s)                        # the number of states
+n.l   <- length(v.l)
+v.S_1 <- rep("Sick", n.i)                   # everyone begins as ill 
+v.L_1 <- rep("Home", n.i)                        
+
+p.Diag_Home   <- 0.001                      # probability to diag
+p.Diag_GP     <- 0.05                       
+p.Diag_Hosp   <- 0.10
+p.Diag_UHC    <- 0.40
+p.Diag_CBHC   <- 0.70
+
+p.Home_Home   <- 0
+p.Home_GP     <- 1 
+p.Home_Hosp   <- 0
+p.Home_UHC    <- 0
+p.Home_CBHC   <- 0
+
+p.GP_Home     <- 0.19
+p.GP_GP       <- 0
+p.GP_Hosp     <- 0.70
+p.GP_UHC      <- 0.10
+p.GP_CBHC     <- 0.01
+
+p.Hosp_Home   <- 0.50
+p.Hosp_GP     <- 0
+p.Hosp_Hosp   <- 0
+p.Hosp_UHC    <- 0.49
+p.Hosp_CBHC   <- 0.01
+
+p.UHC_Home    <- 0.90
+p.UHC_GP      <- 0
+p.UHC_Hosp    <- 0
+p.UHC_UHC     <- 0
+p.UHC_CBHC    <- 0.10
+
+p.CBHC_Home    <- 1
+p.CBHC_GP      <- 0
+p.CBHC_Hosp    <- 0
+p.CBHC_UHC     <- 0
+p.CBHC_CBHC    <- 0
+
+c.Home    <- 0
+c.GP      <- 1000                           # cost
+c.Hosp    <- 5000                
+c.UHC     <- 10000               
+c.CBHC    <- 12000               
+  
+u.Sick <- 0.5                               # utility
+u.Diag <- 0.75 
+```
+
+### Functions
+
+```{r}
+MicroSim <- function(v.S_1, n.i, n.t, v.s, TR.out = TRUE, TS.out = TRUE, seed = 1) {
+
+  m.L <- m.S <- m.C <- m.E <-  matrix(nrow = n.i, ncol = n.t + 1, 
+                               dimnames = list(paste("ind", 1:n.i, sep = " "), 
+                                               paste("cycle", 0:n.t, sep = " ")))  
+  
+  m.S[, 1] <- v.S_1                     
+  
+  m.L[, 1] <- v.L_1
+  
+  for (i in 1:n.i) {
+    
+    set.seed(seed + i) 
+    
+    m.C[i, 1] <- Costs(m.S[i, 1]) 
+    
+    m.E[i, 1] <- Util(m.S[i, 1])  
+    
+    for (t in 1:n.t) {
+      
+      v.p.l <- Loc(m.L[i, t], m.S[i, t]) 
+      v.p.s <- State(m.L[i, t], m.S[i, t])
+      
+      m.L[i, t + 1] <- sample(v.l, prob = v.p.l, size = 1)  
+      
+      m.S[i, t + 1] <- sample(v.s, prob = v.p.s, size = 1)  
+      
+      m.C[i, t + 1] <- Costs(m.L[i, t + 1])   
+      
+      m.E[i, t + 1] <- Util( m.S[i, t + 1])   
+      
+    } 
+    if(i/100 == round(i/100,0)) { # progress bar
+      cat('\r', paste(i/n.i * 100, "% done", sep = " "))
+    }
+  } 
+
+  tc_hat <- mean(tc)
+  
+  te_hat <- mean(te) 
+
+  if (TS.out == TRUE) {  # create a  matrix of transitions across states
+    TS <- paste(m.M, cbind(m.M[, -1], NA), sep = "->")
+    TS <- matrix(TS, nrow = n.i)
+    rownames(TS) <- paste("Ind",   1:n.i, sep = " ")   # name the rows 
+    colnames(TS) <- paste("Cycle", 0:n.t, sep = " ")   # name the columns 
+  } else {
+    TS <- NULL
+  }
+  
+  if (TR.out == TRUE) { # create a trace from the individual trajectories
+    TR <- t(apply(m.M, 2, function(x) table(factor(x, levels = v.s, ordered = TRUE))))
+    TR <- TR / n.i                                       # create a distribution trace
+    rownames(TR) <- paste("Cycle", 0:n.t, sep = " ")     # name the rows 
+    colnames(TR) <- v.n                                  # name the columns 
+  } else {
+    TR <- NULL
+  }
+  
+  results <- list(m.M = m.M, m.C = m.C, m.E = m.E, tc = tc, te = te, tc_hat = tc_hat, te_hat = te_hat, TS = TS, TR = TR)  
+  return(results)
+} 
+
+
+# The Probs function that updates the transition probabilities of every cycle is shown below.
+
+Loc <- function(L_it, S_it) { 
+
+  v.p.it <- rep(NA, n.l)
+  
+  names(v.p.it) <- v.l       
+  
+  if (S_it == "Sick"){
+  
+    v.p.it[L_it == "Home"]     <- c(0, p.Home_GP, 0, 0, 0)                 
+  
+    v.p.it[L_it == "GP"]       <- c(p.GP_Home, p.GP_GP, p.GP_Hosp, p.GP_UHC, p.GP_CBHC)                 
+  
+    v.p.it[L_it == "Hospital"] <- c(p.Hosp_Home, p.Hosp_GP, p.Hosp_Hosp, p.Hosp_UHC, p.Hosp_CBHC)            
+  
+    v.p.it[L_it == "UHC"]      <- c(p.UHC_Home, p.UHC_GP, p.UHC_Hosp, p.UHC_UHC, p.UHC_CBHC)
+  
+    v.p.it[L_it == "CBHC"]     <- c(p.CBHC_Home, p.CBHC_GP, p.CBHC_Hosp, p.CBHC_UHC, p.CBHC_CBHC)
+  
+  } else {
+    
+    v.p.it <- c(1, 0, 0, 0, 0)
+  
+  }
+
+  ifelse(sum(v.p.it) == 1, return(v.p.it), print("Probabilities do not sum to 1")) 
+
+}
+
+State <- function(L_it, S_it) {
+  v.p.it <- rep(NA, n.l)
+
+  names(v.p.it) <- v.s       
+    
+  v.p.it[L_it == "Home"]     <- c(1 - p.Diag_Home, p.Diag_Home)                 
+  
+  v.p.it[L_it == "GP"]       <- c(1 - p.Diag_GP, p.Diag_GP)                 
+  
+  v.p.it[L_it == "Hospital"] <- c(1 - p.Diag_Hosp, p.Diag_Hosp)            
+  
+  v.p.it[L_it == "UHC"]      <- c(1 - p.Diag_UHC, p.Diag_UHC)
+  
+  v.p.it[L_it == "CBHC"]     <- c(1 - p.Diag_CBHC, p.Diag_CBHC)  
+  
+  ifelse(sum(v.p.it) == 1, return(v.p.it), print("Probabilities do not sum to 1")) 
+
+}
+
+### Costs function
+# The Costs function estimates the costs at every cycle.
+
+Costs <- function (L_it) {
+  # M_it: health state occupied by individual i at cycle t (character variable)
+  # Trt:  is the individual being treated? (default is FALSE) 
+  
+  c.it <- 0
+  c.it[L_it == "Home"]  <- c.Home
+  c.it[L_it == "GP"]    <- c.GP
+  c.it[L_it == "Hosp"]  <- c.Hosp
+  c.it[L_it == "UHC"]   <- c.UHC
+  c.it[L_it == "CBHC"]  <- c.CBHC
+  return(c.it)
+}
+
+
+### Health outcome function 
+# The Effs function to update the utilities at every cycle.
+
+Effs <- function (S_it, cl = 1/12) {
+  # M_it: health state occupied by individual i at cycle t (character variable)
+  # Trt:  is the individual treated? (default is FALSE) 
+  # cl:   cycle length (default is 1)
+  
+  u.it <- 0                      # by default the utility for everyone is zero
+  u.it[S_it == "Sick"]  <- u.Sick      # update the utility if healthy
+  u.it[S_it == "Diagosed"] <- u.Diag  # update the utility if sick conditional on treatment
+  QALYs <-  u.it * cl            # calculate the QALYs during cycle t
+  return(QALYs)                  # return the QALYs
+}
+
+```
+
+### Running the sim
+
+sim_no_trt  <- MicroSim(v.M_1, n.i, n.t, v.n, d.c, d.e, Trt = FALSE) # run for no treatment
+sim_trt     <- MicroSim(v.M_1, n.i, n.t, v.n, d.c, d.e, Trt = TRUE)  # run for treatment
+
+
+### Create outputs
+
+```{r}
+# store the mean costs (and the MCSE) of each strategy in a new variable v.C (vector costs)
+v.C  <- c(sim_no_trt$tc_hat, sim_trt$tc_hat) 
+se.C <- c(sd(sim_no_trt$tc), sd(sim_trt$tc)) / sqrt(n.i)
+# store the mean QALYs (and the MCSE) of each strategy in a new variable v.E (vector health outcomes)
+v.E  <- c(sim_no_trt$te_hat, sim_trt$te_hat)
+se.E <- c(sd(sim_no_trt$te), sd(sim_trt$te)) / sqrt(n.i)
+
+delta.C <- v.C[2] - v.C[1]                   # calculate incremental costs
+delta.E <- v.E[2] - v.E[1]                   # calculate incremental QALYs
+se.delta.E <- sd(sim_trt$te - sim_no_trt$te) / sqrt(n.i) # Monte Carlo squared error (MCSE) of incremental costs
+se.delta.C <- sd(sim_trt$tc - sim_no_trt$tc) / sqrt(n.i) # Monte Carlo squared error (MCSE) of incremental QALYs
+ICER    <- delta.C / delta.E                 # calculate the ICER
+results <- c(delta.C, delta.E, ICER)         # store the values in a new variable
+
+# Create full incremental cost-effectiveness analysis table
+table_micro <- data.frame(
+  c(round(v.C, 0),  ""),           # costs per arm
+  c(round(se.C, 0), ""),           # MCSE for costs
+  c(round(v.E, 3),  ""),           # health outcomes per arm
+  c(round(se.E, 3), ""),           # MCSE for health outcomes
+  c("", round(delta.C, 0),   ""),  # incremental costs
+  c("", round(se.delta.C, 0),""),  # MCSE for incremental costs
+  c("", round(delta.E, 3),   ""),  # incremental QALYs 
+  c("", round(se.delta.E, 3),""),  # MCSE for health outcomes (QALYs) gained
+  c("", round(ICER, 0),      "")   # ICER
+)
+rownames(table_micro) <- c(v.Trt, "* are MCSE values")  # name the rows
+colnames(table_micro) <- c("Costs", "*",  "QALYs", "*", "Incremental Costs", "*", "QALYs Gained", "*", "ICER") # name the columns
+table_micro  # print the table 
+
+```
+
