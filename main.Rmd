@@ -22,7 +22,7 @@ Outcomes: time to diag, time to treat, cost, QoL
 ### Model input
 ```{r}
 n.i   <- 1000                               # number of simulated individuals
-n.t   <- 30                                 # time horizon, 30 cycles
+n.t   <- 60                                 # time horizon, 30 cycles
 v.s   <- c("Sick","Diagnosed")              # the model states
 v.l   <- c("Home", "GP", "Hosp", "UHC", "CBHC")
 n.s   <- length(v.s)                        # the number of states
@@ -31,10 +31,10 @@ v.S_1 <- rep("Sick", n.i)                   # everyone begins as ill
 v.L_1 <- rep("Home", n.i)                        
 
 p.Diag_Home   <- 0.001                      # probability to diag
-p.Diag_GP     <- 0.05                       
-p.Diag_Hosp   <- 0.10
-p.Diag_UHC    <- 0.40
-p.Diag_CBHC   <- 0.70
+p.Diag_GP     <- 0.005                       
+p.Diag_Hosp   <- 0.01
+p.Diag_UHC    <- 0.10
+p.Diag_CBHC   <- 0.20
 
 p.Home_Home   <- 0
 p.Home_GP     <- 1 
@@ -42,23 +42,23 @@ p.Home_Hosp   <- 0
 p.Home_UHC    <- 0
 p.Home_CBHC   <- 0
 
-p.GP_Home     <- 0.19
+p.GP_Home     <- 0.60
 p.GP_GP       <- 0
-p.GP_Hosp     <- 0.70
-p.GP_UHC      <- 0.10
+p.GP_Hosp     <- 0.34
+p.GP_UHC      <- 0.05
 p.GP_CBHC     <- 0.01
 
-p.Hosp_Home   <- 0.50
+p.Hosp_Home   <- 0.75
 p.Hosp_GP     <- 0
 p.Hosp_Hosp   <- 0
-p.Hosp_UHC    <- 0.49
+p.Hosp_UHC    <- 0.24
 p.Hosp_CBHC   <- 0.01
 
-p.UHC_Home    <- 0.90
+p.UHC_Home    <- 0.95
 p.UHC_GP      <- 0
 p.UHC_Hosp    <- 0
 p.UHC_UHC     <- 0
-p.UHC_CBHC    <- 0.10
+p.UHC_CBHC    <- 0.05
 
 p.CBHC_Home    <- 1
 p.CBHC_GP      <- 0
@@ -67,24 +67,23 @@ p.CBHC_UHC     <- 0
 p.CBHC_CBHC    <- 0
 
 c.Home    <- 0
-c.GP      <- 1000                           # cost
-c.Hosp    <- 5000                
-c.UHC     <- 10000               
-c.CBHC    <- 12000               
+c.GP      <- 100                           # healthcare utilisation cost
+c.Hosp    <- 1000                
+c.UHC     <- 5000               
+c.CBHC    <- 7500               
   
-u.Sick <- 0.5                               # utility
-u.Diag <- 0.75 
+u.Sick <- 0                               # utility benefit
+u.Diag <- 0.1 
 ```
 
 ### Functions
 
 ```{r}
-MicroSim <- function(v.S_1, n.i, n.t, v.s, TR.out = TRUE, TS.out = TRUE, seed = 1) {
+MicroSim <- function(v.S_1, v.L_1, n.i, n.t, v.s, v.l, TR.out = TRUE, TS.out = TRUE, seed = 1) {
 
   m.L <- m.S <- m.C <- m.E <-  matrix(nrow = n.i, ncol = n.t + 1, 
                                dimnames = list(paste("ind", 1:n.i, sep = " "), 
-                                               paste("cycle", 0:n.t, sep = " ")))  
-  
+                                               paste("cycle", 0:n.t, sep = " "))) 
   m.S[, 1] <- v.S_1                     
   
   m.L[, 1] <- v.L_1
@@ -100,9 +99,10 @@ MicroSim <- function(v.S_1, n.i, n.t, v.s, TR.out = TRUE, TS.out = TRUE, seed = 
     for (t in 1:n.t) {
       
       v.p.l <- Loc(m.L[i, t], m.S[i, t]) 
+      
       v.p.s <- State(m.L[i, t], m.S[i, t])
       
-      m.L[i, t + 1] <- sample(v.l, prob = v.p.l, size = 1)  
+      m.L[i, t + 1] <- sample(v.l, prob = v.p.l, size = 1) 
       
       m.S[i, t + 1] <- sample(v.s, prob = v.p.s, size = 1)  
       
@@ -115,13 +115,19 @@ MicroSim <- function(v.S_1, n.i, n.t, v.s, TR.out = TRUE, TS.out = TRUE, seed = 
       cat('\r', paste(i/n.i * 100, "% done", sep = " "))
     }
   } 
+  
+  v.dwc <- 1 / (1 + 0) ^ (0:n.t)   # calculate the cost discount weight based on the discount rate d.c 
+  v.dwe <- 1 / (1 + 0) ^ (0:n.t)   # calculate the QALY discount weight based on the discount rate d.e
+  
+  tc <- m.C %*% v.dwc       # total cost per individual
+  te <- m.E %*% v.dwe
 
   tc_hat <- mean(tc)
   
   te_hat <- mean(te) 
 
   if (TS.out == TRUE) {  # create a  matrix of transitions across states
-    TS <- paste(m.M, cbind(m.M[, -1], NA), sep = "->")
+    TS <- paste(m.S, cbind(m.S[, -1], NA), sep = "->")
     TS <- matrix(TS, nrow = n.i)
     rownames(TS) <- paste("Ind",   1:n.i, sep = " ")   # name the rows 
     colnames(TS) <- paste("Cycle", 0:n.t, sep = " ")   # name the columns 
@@ -130,19 +136,23 @@ MicroSim <- function(v.S_1, n.i, n.t, v.s, TR.out = TRUE, TS.out = TRUE, seed = 
   }
   
   if (TR.out == TRUE) { # create a trace from the individual trajectories
-    TR <- t(apply(m.M, 2, function(x) table(factor(x, levels = v.s, ordered = TRUE))))
+    TR <- t(apply(m.S, 2, function(x) table(factor(x, levels = v.s, ordered = TRUE))))
     TR <- TR / n.i                                       # create a distribution trace
     rownames(TR) <- paste("Cycle", 0:n.t, sep = " ")     # name the rows 
-    colnames(TR) <- v.n                                  # name the columns 
+    colnames(TR) <- v.s                                  # name the columns 
   } else {
     TR <- NULL
   }
   
-  results <- list(m.M = m.M, m.C = m.C, m.E = m.E, tc = tc, te = te, tc_hat = tc_hat, te_hat = te_hat, TS = TS, TR = TR)  
+  results <- list(m.L = m.L, m.S = m.S, m.C = m.C, m.E = m.E, tc = tc, te = te, tc_hat = tc_hat, te_hat = te_hat, TS = TS, TR = TR)  
   return(results)
-} 
+}
 
+```
 
+### Helper functions
+
+```{r}
 # The Probs function that updates the transition probabilities of every cycle is shown below.
 
 Loc <- function(L_it, S_it) { 
@@ -157,7 +167,7 @@ Loc <- function(L_it, S_it) {
   
     v.p.it[L_it == "GP"]       <- c(p.GP_Home, p.GP_GP, p.GP_Hosp, p.GP_UHC, p.GP_CBHC)                 
   
-    v.p.it[L_it == "Hospital"] <- c(p.Hosp_Home, p.Hosp_GP, p.Hosp_Hosp, p.Hosp_UHC, p.Hosp_CBHC)            
+    v.p.it[L_it == "Hosp"] <- c(p.Hosp_Home, p.Hosp_GP, p.Hosp_Hosp, p.Hosp_UHC, p.Hosp_CBHC)            
   
     v.p.it[L_it == "UHC"]      <- c(p.UHC_Home, p.UHC_GP, p.UHC_Hosp, p.UHC_UHC, p.UHC_CBHC)
   
@@ -174,21 +184,27 @@ Loc <- function(L_it, S_it) {
 }
 
 State <- function(L_it, S_it) {
-  v.p.it <- rep(NA, n.l)
+  v.p.it <- rep(NA, n.s)
 
   names(v.p.it) <- v.s       
     
-  v.p.it[L_it == "Home"]     <- c(1 - p.Diag_Home, p.Diag_Home)                 
+  if (S_it == "Sick"){
+    v.p.it[L_it == "Home"]     <- c(1 - p.Diag_Home, p.Diag_Home)                 
   
-  v.p.it[L_it == "GP"]       <- c(1 - p.Diag_GP, p.Diag_GP)                 
+    v.p.it[L_it == "GP"]       <- c(1 - p.Diag_GP, p.Diag_GP)                 
   
-  v.p.it[L_it == "Hospital"] <- c(1 - p.Diag_Hosp, p.Diag_Hosp)            
+    v.p.it[L_it == "Hosp"]      <- c(1 - p.Diag_Hosp, p.Diag_Hosp)            
   
-  v.p.it[L_it == "UHC"]      <- c(1 - p.Diag_UHC, p.Diag_UHC)
+    v.p.it[L_it == "UHC"]      <- c(1 - p.Diag_UHC, p.Diag_UHC)
   
-  v.p.it[L_it == "CBHC"]     <- c(1 - p.Diag_CBHC, p.Diag_CBHC)  
+    v.p.it[L_it == "CBHC"]     <- c(1 - p.Diag_CBHC, p.Diag_CBHC)
+ 
+  } else {
+    
+    v.p.it <- c(0,1)
+  }
   
-  ifelse(sum(v.p.it) == 1, return(v.p.it), print("Probabilities do not sum to 1")) 
+  return(v.p.it) 
 
 }
 
@@ -212,23 +228,44 @@ Costs <- function (L_it) {
 ### Health outcome function 
 # The Effs function to update the utilities at every cycle.
 
-Effs <- function (S_it, cl = 1/12) {
+Util <- function (S_it, cl = 1/12) {
   u.it <- 0                      # by default the utility for everyone is zero
   u.it[S_it == "Sick"]  <- u.Sick      # update the utility if healthy
-  u.it[S_it == "Diagosed"] <- u.Diag  # update the utility if sick conditional on treatment
+  u.it[S_it == "Diagnosed"] <- u.Diag  # update the utility if sick conditional on treatment
   QALYs <-  u.it * cl            # calculate the QALYs during cycle t
   return(QALYs)                  # return the QALYs
 }
-
 ```
+
 
 ### Running the sim
 
-sim_no_trt  <- MicroSim(v.M_1, n.i, n.t, v.n, d.c, d.e, Trt = FALSE) # run for no treatment
-sim_trt     <- MicroSim(v.M_1, n.i, n.t, v.n, d.c, d.e, Trt = TRUE)  # run for treatment
+```{r}
+sim  <- MicroSim(v.S_1, v.L_1, n.i, n.t, v.s, v.l)
+
+```
 
 
 ### Create outputs
+
+```{r}
+v.C  <- sim$tc_hat 
+se.C <- sd(sim$tc) / sqrt(n.i)
+# store the mean QALYs (and the MCSE) of each strategy in a new variable v.E (vector health outcomes)
+v.E  <- sim$te_hat
+se.E <- sd(sim$te) / sqrt(n.i)
+
+
+table_micro <- data.frame(
+  Average_cost = c(round(v.C, 0),  ""),           # costs per arm
+  SD_cost = c(round(se.C, 0), ""),           # MCSE for costs
+  Average_QALY_gain = c(round(v.E, 3),  ""),           # health outcomes per arm
+  SD_QALY_gain = c(round(se.E, 3), "")           # MCSE for health outcomes
+)
+
+print(table_micro)
+```
+
 
 ```{r}
 # store the mean costs (and the MCSE) of each strategy in a new variable v.C (vector costs)
